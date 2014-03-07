@@ -164,9 +164,9 @@ table tr:hover td{
 <body>
 
 <table cellspacing='0'> <!-- cellspacing='0' is important, must stay -->
-	<tr><th></th><th>Probleem</th><th>Gebruiker</th><th>Taal</th><th>Datum</th></tr><!-- Table Header -->
+	<tr><th>Probleem</th><th>Gebruiker</th><th>Taal</th><th>Datum</th></tr><!-- Table Header -->
       {% for entry in entries %}
-        <tr><td><img src="{{ 'jordivh94@gmail.com' | gravatar }}"></img></td><td>{{ entry.title }}</td><td>{{ entry.user }}</td><td>{{ entry.lang }}</td><td>{{ entry.date }}</td></tr>
+        <tr><td>{{ entry.title }}</td><td>{{ entry.user }}</td><td>{{ entry.lang }}</td><td>{{ entry.date }}</td></tr>
       {% else %}
         <td><em>Ongelofelijk, geen problemen?</td>
       {% endfor %}

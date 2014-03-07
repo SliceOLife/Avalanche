@@ -1,11 +1,10 @@
 # all the imports
 from uuid import uuid4
+from datetime import datetime
 
 import os
-from datetime import datetime
 from flask import Flask, request, session, redirect, url_for, \
     abort, render_template, flash, make_response, jsonify
-from flask.ext.gravatar import Gravatar
 from flask.ext.httpauth import HTTPBasicAuth
 from flask.ext.sqlalchemy import SQLAlchemy
 
@@ -23,13 +22,6 @@ app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
 auth = HTTPBasicAuth()
 db = SQLAlchemy(app)
 app.config.from_object(__name__)
-gravatar = Gravatar(app,
-                    size=40,
-                    rating='g',
-                    default='retro',
-                    force_default=False,
-                    use_ssl=False,
-                    base_url=None)
 
 
 class Entry(db.Model):
@@ -49,13 +41,16 @@ def is_empty(any_structure):
     else:
         return True
 
+
 @app.errorhandler(404)
 def not_found(error):
     return make_response(jsonify({'error': 'Not found'}), 404)
 
+
 @app.errorhandler(400)
 def invalid_args(error):
     return make_response(jsonify({'error': 'Invalid arguments'}), 400)
+
 
 @app.route('/')
 def show_entries():
@@ -113,16 +108,16 @@ def logout():
 # Public API method. Gets list of all current issues in tracker.
 @app.route('/api/v1.0/issues/', methods=['GET'])
 def show_entries_api():
-        cols = ['id', 'title', 'text', 'lang', 'user', 'date']
-        data = Entry.query.all()
-        issue = [{col: getattr(d, col) for col in cols} for d in data]
+    cols = ['id', 'title', 'text', 'lang', 'user', 'date']
+    data = Entry.query.all()
+    issue = [{col: getattr(d, col) for col in cols} for d in data]
 
-        if is_empty(issue):
-            response = jsonify({'error': 'no issues'})
-            response.status_code = 404
-            return response
-        else:
-            return jsonify(issues=issue)
+    if is_empty(issue):
+        response = jsonify({'error': 'no issues'})
+        response.status_code = 404
+        return response
+    else:
+        return jsonify(issues=issue)
 
 
 # Public API method. Get specific issue by ID
@@ -133,7 +128,7 @@ def show_entry_api(api_id):
     issue = [{col: getattr(d, col) for col in cols} for d in data]
 
     if is_empty(issue):
-        response = jsonify({'error': 'unknown issue'})
+        response = jsonify({'error': 'issue not found'})
         response.status_code = 404
         return response
     else:

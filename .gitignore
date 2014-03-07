@@ -34,3 +34,13 @@ nosetests.xml
 .mr.developer.cfg
 .project
 .pydevproject
+.DS_Store
+avalanche/.DS_Store
+avalanche/.Python
+avalanche/include/python2.7
+db.sqlite
+env/.DS_Store
+env/.Python
+env/include/python2.7
+static/.DS_Store
+templates/.DS_Store

@@ -4,18 +4,23 @@ from datetime import datetime
 
 import os
 from flask import Flask, request, session, redirect, url_for, \
-    abort, render_template, flash, make_response, jsonify
+    abort, render_template, flash, make_response, jsonify, send_from_directory
+from werkzeug.utils import secure_filename
 from flask.ext.httpauth import HTTPBasicAuth
 from flask.ext.sqlalchemy import SQLAlchemy
 
 
-# init
+# init config
 app = Flask(__name__)
 app.config['USERNAME'] = 'dev'
 app.config['PASSWORD'] = 'default'
 app.config['SECRET_KEY'] = 'the quick brown fox jumps over the lazy dog'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite'
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
+app.config['UPLOAD_FOLDER'] = 'uploads/source/'
+
+# extra config
+ALLOWED_EXTENSIONS = set(['zip', 'rar', 'png'])
 
 
 # Extensions and such
@@ -33,13 +38,20 @@ class Entry(db.Model):
     user = db.Column(db.String(32))
     date = db.Column(db.String(32))
     uniqueid = db.Column(db.String(100))
+    fileloc = db.Column(db.String(100))
 
 
+# utils and such
 def is_empty(any_structure):
     if any_structure:
         return False
     else:
         return True
+
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
 
 
 @app.errorhandler(404)
@@ -66,13 +78,28 @@ def add_entry():
     i = datetime.now()
     if not session.get('logged_in'):
         abort(401)
-    entry = Entry(title=request.form['title'], text=request.form['text'], lang=request.form['lang'],
-                  user=request.form['user'], date=str(i.strftime('%Y/%m/%d %H:%M:%S')), uniqueid=str(uuid4()))
-    db.session.add(entry)
-    db.session.commit()
 
-    flash('Bedankt voor het posten van uw probleem! UUID: ' + entry.uniqueid)
-    return redirect(url_for('show_entries'))
+    if request.form['title'] is None or request.form['text'] is None or request.form['lang'] is None or request.form[
+        'user'] is None:
+        flash('Onvoldoende gegevens ingevuld, probeer het opnieuw.')
+        return redirect(url_for('show_entries'))
+    else:
+        file = request.files['file']
+        uniqueid = str(uuid4())
+        if file and allowed_file(file.filename):
+            filename = 'source_' + uniqueid + '.' + file.filename.rsplit('.', 1)[1]
+            fPath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(fPath)
+            fileLoc = '/uploads/' + filename
+        else:
+            fileLoc = ""
+        entry = Entry(title=request.form['title'], text=request.form['text'], lang=request.form['lang'],
+                      user=request.form['user'], date=str(i.strftime('%Y/%m/%d %H:%M:%S')), uniqueid=uniqueid,
+                      fileloc=fileLoc)
+        db.session.add(entry)
+        db.session.commit()
+        flash('Bedankt voor het posten van uw probleem! UUID: ' + entry.uniqueid)
+        return redirect(url_for('show_entries'))
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -96,6 +123,12 @@ def show_entries_exp():
     return render_template('show_entries_exp.html', entries=entries)
 
 
+@app.route('/projector')
+def show_entries_projector():
+    entries = Entry.query.all()
+    return render_template('show_entries_projector.html', entries=entries)
+
+
 @app.route('/logout')
 def logout():
     session.pop('logged_in', None)
@@ -103,12 +136,17 @@ def logout():
     return redirect(url_for('show_entries'))
 
 
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
 # API routing ( CRUD )
 
 # Public API method. Gets list of all current issues in tracker.
 @app.route('/api/v1.0/issues/', methods=['GET'])
 def show_entries_api():
-    cols = ['id', 'title', 'text', 'lang', 'user', 'date']
+    cols = ['id', 'title', 'text', 'lang', 'user', 'date', 'fileloc']
     data = Entry.query.all()
     issue = [{col: getattr(d, col) for col in cols} for d in data]
 
@@ -123,7 +161,7 @@ def show_entries_api():
 # Public API method. Get specific issue by ID
 @app.route('/api/v1.0/issues/<int:api_id>', methods=['GET'])
 def show_entry_api(api_id):
-    cols = ['title', 'text', 'lang', 'user', 'date']
+    cols = ['title', 'text', 'lang', 'user', 'date', 'fileloc']
     data = Entry.query.filter(Entry.id == api_id).all()
     issue = [{col: getattr(d, col) for col in cols} for d in data]
 
@@ -204,6 +242,10 @@ def delete_entry_api():
     else:
         db.session.delete(issue)
         db.session.commit()
+
+        # We need to kill the corresponding source too if it exists
+        if os.path.isfile(issue.fileloc):
+            os.remove(issue.fileloc)
         response = jsonify({'success': 'true'})
         response.status_code = 200
         return response

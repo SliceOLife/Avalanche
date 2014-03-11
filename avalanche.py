@@ -1,11 +1,10 @@
 # all the imports
 from uuid import uuid4
-from datetime import datetime
 
+from datetime import datetime
 import os
 from flask import Flask, request, session, redirect, url_for, \
     abort, render_template, flash, make_response, jsonify, send_from_directory
-from werkzeug.utils import secure_filename
 from flask.ext.httpauth import HTTPBasicAuth
 from flask.ext.sqlalchemy import SQLAlchemy
 
@@ -20,7 +19,7 @@ app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
 app.config['UPLOAD_FOLDER'] = 'uploads/source/'
 
 # extra config
-ALLOWED_EXTENSIONS = set(['zip', 'rar', 'png'])
+ALLOWED_EXTENSIONS = {'zip'}
 
 
 # Extensions and such
@@ -39,6 +38,7 @@ class Entry(db.Model):
     date = db.Column(db.String(32))
     uniqueid = db.Column(db.String(100))
     fileloc = db.Column(db.String(100))
+    isactive = db.Column(db.Integer)
 
 
 # utils and such
@@ -54,23 +54,10 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
 
 
-@app.errorhandler(404)
-def not_found(error):
-    return make_response(jsonify({'error': 'Not found'}), 404)
-
-
-@app.errorhandler(400)
-def invalid_args(error):
-    return make_response(jsonify({'error': 'Invalid arguments'}), 400)
-
-
 @app.route('/')
 def show_entries():
     entries = Entry.query.all()
     return render_template('show_entries.html', entries=entries)
-
-
-users = {'dev': "default", 'teacher': "davinci"}
 
 
 @app.route('/add', methods=['POST'])
@@ -93,12 +80,14 @@ def add_entry():
             fileLoc = '/uploads/' + filename
         else:
             fileLoc = ""
+            flash('Bestandsextensie: ' + file.filename.rsplit('.', 1)[1] + ' is niet toegestaan!')
+            return redirect(url_for('show_entries'))
         entry = Entry(title=request.form['title'], text=request.form['text'], lang=request.form['lang'],
                       user=request.form['user'], date=str(i.strftime('%Y/%m/%d %H:%M:%S')), uniqueid=uniqueid,
-                      fileloc=fileLoc)
+                      fileloc=fileLoc, isactive=1)
         db.session.add(entry)
         db.session.commit()
-        flash('Bedankt voor het posten van uw probleem! UUID: ' + entry.uniqueid)
+        flash('Bedankt voor het posten van uw probleem! Bewaar de volgende reeks goed om uw probleem te kunnen bewerken: ' + entry.uniqueid)
         return redirect(url_for('show_entries'))
 
 
@@ -146,7 +135,7 @@ def uploaded_file(filename):
 # Public API method. Gets list of all current issues in tracker.
 @app.route('/api/v1.0/issues/', methods=['GET'])
 def show_entries_api():
-    cols = ['id', 'title', 'text', 'lang', 'user', 'date', 'fileloc']
+    cols = ['id', 'title', 'text', 'lang', 'user', 'date', 'fileloc', 'isactive']
     data = Entry.query.all()
     issue = [{col: getattr(d, col) for col in cols} for d in data]
 
@@ -161,7 +150,7 @@ def show_entries_api():
 # Public API method. Get specific issue by ID
 @app.route('/api/v1.0/issues/<int:api_id>', methods=['GET'])
 def show_entry_api(api_id):
-    cols = ['title', 'text', 'lang', 'user', 'date', 'fileloc']
+    cols = ['title', 'text', 'lang', 'user', 'date', 'fileloc', 'isactive']
     data = Entry.query.filter(Entry.id == api_id).all()
     issue = [{col: getattr(d, col) for col in cols} for d in data]
 
@@ -225,13 +214,56 @@ def update_entry_api():
         response.status_code = 200
         return response
 
+# Private API method. Mark issue inactive by unique ID assigned on issue creation
+@app.route('/api/v1.0/issues/deactivate', methods=['POST'])
+def inactive_entry_api():
+    uniqueid = request.json.get('uniqueid')
+    if uniqueid is None:
+        return make_response(jsonify({'error': 'Invalid arguments'}), 400)
+
+    issue = Entry.query.filter(Entry.uniqueid == uniqueid).first()
+
+    if is_empty(issue):
+        response = jsonify({'error': 'unknown issue'})
+        response.status_code = 404
+        return response
+    else:
+        issue.isactive = 0
+        db.session.commit()
+
+        response = jsonify({'success': 'true', 'uuid': uniqueid})
+        response.status_code = 200
+        return response
+
+
+# Private API method. Mark issue active by unique ID assigned on issue creation
+@app.route('/api/v1.0/issues/activate', methods=['POST'])
+def active_entry_api():
+    uniqueid = request.json.get('uniqueid')
+    if uniqueid is None:
+        return make_response(jsonify({'error': 'Invalid arguments'}), 400)
+
+    issue = Entry.query.filter(Entry.uniqueid == uniqueid).first()
+
+    if is_empty(issue):
+        response = jsonify({'error': 'unknown issue'})
+        response.status_code = 404
+        return response
+    else:
+        issue.isactive = 1
+        db.session.commit()
+
+        response = jsonify({'success': 'true', 'uuid': uniqueid})
+        response.status_code = 200
+        return response
+
 
 # Private API method. Delete issue by unique ID assigned on issue creation
 @app.route('/api/v1.0/issues/delete', methods=['POST'])
 def delete_entry_api():
     uniqueid = request.json.get('uniqueid')
     if uniqueid is None:
-        abort(400)  # missing args
+        return make_response(jsonify({'error': 'Invalid arguments'}), 400)
 
     issue = Entry.query.filter(Entry.uniqueid == uniqueid).first()
 
@@ -243,10 +275,10 @@ def delete_entry_api():
         db.session.delete(issue)
         db.session.commit()
 
-        # We need to kill the corresponding source too if it exists
+        # We need to kill the corresponding source files too if they exist
         if os.path.isfile(issue.fileloc):
             os.remove(issue.fileloc)
-        response = jsonify({'success': 'true'})
+        response = jsonify({'success': 'true', 'fileloc_del': issue.fileloc})
         response.status_code = 200
         return response
 

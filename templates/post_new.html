@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Avalanche | Nieuw probleem</title>
+  <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css">
+
+  <!-- Optional theme -->
+  <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap-theme.min.css">
+
+  <!-- Latest compiled and minified JavaScript -->
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <link rel=stylesheet type=text/css href="{{ url_for('static', filename='style_index_new.css') }}">
+</head>
+
+<body>
+  <div class="container">
+    <div class="row">
+      <div class="col-md-12">
+        <div class="wrap">
+          <p class="form-title">
+            Post nieuw probleem</p>
+          {% if error %}
+          <p class=error><strong>Error:</strong> {{ error }}{% endif %}
+            <form action="{{ url_for('add_entry') }}" method=post enctype=multipart/form-data class="login">
+              <input type="text" name="title" placeholder="Probleem..(kort)" />
+              <textarea name=text rows=5 cols=40 placeholder="Lange omschrijving"></textarea>
+              <input type="text" name="lang" placeholder="Taal" />
+              <input type="text" name="user" placeholder="Gebruiker" />
+              <input type=file name=file>
+              <input type="submit" value="Post" class="btn btn-success btn-sm" />
+            </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+
+</html>

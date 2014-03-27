@@ -1,13 +1,17 @@
 # all the imports
 from uuid import uuid4
-
 from datetime import datetime
+from base64 import b64encode
+from os import urandom
+import sys
+
 import os
 from flask import Flask, request, session, redirect, url_for, \
-    abort, render_template, flash, make_response, jsonify, send_from_directory
+    abort, render_template, flash, make_response, jsonify, send_from_directory, \
+    g
 from flask.ext.httpauth import HTTPBasicAuth
 from flask.ext.sqlalchemy import SQLAlchemy
-
+from passlib.apps import custom_app_context as pwd_context
 
 # init config
 app = Flask(__name__)
@@ -41,6 +45,27 @@ class Entry(db.Model):
     isactive = db.Column(db.Integer)
 
 
+class User(db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(32), unique=True)
+    password_hash = db.Column(db.String(128))
+    email = db.Column(db.String(120), unique=True)
+    nickname = db.Column(db.String(32))
+    total_problems = db.Column(db.Integer)
+    api_id = db.Column(db.String(32))
+
+    def hash_password(self, password):
+      self.password_hash = pwd_context.encrypt(password)
+
+    def verify_password(self, password):
+      return pwd_context.verify(password, self.password_hash)
+
+    def generate_api_id(self):
+      self.api_id = b64encode(urandom(9))
+
+
+
 # utils and such
 def is_empty(any_structure):
     if any_structure:
@@ -56,8 +81,10 @@ def allowed_file(filename):
 
 @app.route('/')
 def show_entries():
-    entries = Entry.query.all()
-    return render_template('show_entries.html', entries=entries)
+    if not session.get('logged_in'):
+      return render_template('reg_new.html')
+    else:
+      return render_template('post_new.html')
 
 
 @app.route('/add', methods=['POST'])
@@ -77,33 +104,58 @@ def add_entry():
             filename = 'source_' + uniqueid + '.' + file.filename.rsplit('.', 1)[1]
             fPath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(fPath)
-            fileLoc = '/uploads/' + filename
+            fileLoc = '/uploads/source/' + filename
         else:
             fileLoc = ""
-            flash('Bestandsextensie: ' + file.filename.rsplit('.', 1)[1] + ' is niet toegestaan!')
-            return redirect(url_for('show_entries'))
+            #return redirect(url_for('show_entries'))
         entry = Entry(title=request.form['title'], text=request.form['text'], lang=request.form['lang'],
                       user=request.form['user'], date=str(i.strftime('%Y/%m/%d %H:%M:%S')), uniqueid=uniqueid,
                       fileloc=fileLoc, isactive=1)
         db.session.add(entry)
         db.session.commit()
-        flash('Bedankt voor het posten van uw probleem! Bewaar de volgende reeks goed om uw probleem te kunnen bewerken: ' + entry.uniqueid)
-        return redirect(url_for('show_entries'))
+        #flash(
+        #'Bedankt voor het posten van uw probleem! Bewaar de volgende reeks goed om uw probleem te kunnen bewerken: ' + entry.uniqueid)
+        return render_template('post_success.html',
+                               success='Bedankt voor het posten van uw probleem! Bewaar de volgende reeks goed om uw probleem te kunnen bewerken: ' + entry.uniqueid)
+
+@app.route('/register', methods=['POST'])
+def add_user():
+  i = datetime.now()
+  if session.get('logged_in'):
+    flash('U bent al geregistreerd!')
+    return redirect(url_for('show_entries'))
+  else:
+    username = request.form['username']
+    password = request.form['password']
+    email = request.form['email']
+    nickname = request.form['nickname']
+    if username is None or password is None:
+        abort(400)    # missing arguments
+    if User.query.filter_by(username=username).first() is not None:
+        abort(400)    # existing user
+    user = User(username=username,email=email,nickname=nickname)
+    user.hash_password(password)
+    user.generate_api_id()
+    db.session.add(user)
+    db.session.commit()
+    return render_template('profile.html', user=user)
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    error = None
-    if request.method == 'POST':
-        if request.form['username'] != app.config['USERNAME']:
-            error = 'Foutieve gebruikersnaam'
-        elif request.form['password'] != app.config['PASSWORD']:
-            error = 'Foutief wachtwoord'
-        else:
-            session['logged_in'] = True
-            flash('U bent succesvol ingelogd')
-            return redirect(url_for('show_entries'))
-    return render_template('login.html', error=error)
+  username = request.form['username']
+  password = request.form['password']
+  error = None
+
+  if request.method == 'POST':
+    user = User.query.filter_by(username=username).first()
+    if not user or not user.verify_password(password):
+      error = 'Foutieve gebruikersnaam en of wachtwoord!'
+      return render_template('index_new.html', error=error)
+    g.user = user
+    session['logged_in'] = True
+    flash('U bent succesvol ingelogd')
+    return redirect(url_for('show_entries'))
 
 
 @app.route('/exp')
@@ -112,10 +164,25 @@ def show_entries_exp():
     return render_template('show_entries_exp.html', entries=entries)
 
 
+@app.route('/exp_p')
+def post_entry_exp():
+    return render_template('post_new.html')
+
+
 @app.route('/projector')
 def show_entries_projector():
     entries = Entry.query.all()
     return render_template('show_entries_projector.html', entries=entries)
+
+
+@app.route('/profile')
+def show_profile():
+    return render_template('profile.html')
+
+
+@app.route('/indexn')
+def show_indexn():
+    return render_template('index_new.html')
 
 
 @app.route('/logout')
@@ -131,6 +198,22 @@ def uploaded_file(filename):
 
 
 # API routing ( CRUD )
+
+@app.route('/api/users', methods=['POST'])
+def new_user():
+    username = request.json.get('username')
+    password = request.json.get('password')
+    if username is None or password is None:
+        abort(400)  # missing arguments
+    if User.query.filter_by(username=username).first() is not None:
+        abort(400)  # existing user
+    user = User(username=username)
+    user.hash_password(password)
+    user.generate_api_id()
+    db.session.add(user)
+    db.session.commit()
+    return jsonify({'username': user.username}), 201, {'Location': url_for('get_user', id=user.id, _external=True)}
+
 
 # Public API method. Gets list of all current issues in tracker.
 @app.route('/api/v1.0/issues/', methods=['GET'])
@@ -163,6 +246,7 @@ def show_entry_api(api_id):
 
 
 # Public API method. Post a new issue to tracker.
+# TODO: Look into file upload using post.
 @app.route('/api/v1.0/issues/post', methods=['POST'])
 def post_entry_api():
     title = request.json.get('title')
@@ -174,8 +258,8 @@ def post_entry_api():
     if title is None or text is None:
         abort(400)  # missing arguments
 
-    entry = Entry(title=title, text=text, lang=lang,
-                  user=user, date=str(date.strftime('%Y/%m/%d %H:%M:%S')), uniqueid=str(uniqueid))
+    entry = Entry(title=title, text=text, lang=lang, user=user, date=str(date.strftime('%Y/%m/%d %H:%M:%S')),
+                  uniqueid=str(uniqueid))
     db.session.add(entry)
     db.session.commit()
 
@@ -213,6 +297,7 @@ def update_entry_api():
         response = jsonify({'success': 'true', 'uuid': uuniqueid})
         response.status_code = 200
         return response
+
 
 # Private API method. Mark issue inactive by unique ID assigned on issue creation
 @app.route('/api/v1.0/issues/deactivate', methods=['POST'])
@@ -276,9 +361,14 @@ def delete_entry_api():
         db.session.commit()
 
         # We need to kill the corresponding source files too if they exist
-        if os.path.isfile(issue.fileloc):
-            os.remove(issue.fileloc)
-        response = jsonify({'success': 'true', 'fileloc_del': issue.fileloc})
+        sourcefile = os.path.dirname(os.path.realpath(sys.argv[0])) + issue.fileloc
+        if os.path.isfile(sourcefile):
+            os.remove(sourcefile)
+        else:
+            response = jsonify({'success': 'false', 'fileloc_del': sourcefile})
+            response.status_code = 500
+            return response
+        response = jsonify({'success': 'true'})
         response.status_code = 200
         return response
 

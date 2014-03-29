@@ -1,4 +1,4 @@
-Avalanche [![Build Status](https://travis-ci.org/SliceOLife/Avalanche.svg?branch=master)](https://travis-ci.org/SliceOLife/Avalanche)
+Avalanche [![Build Status](https://drone.io/github.com/SliceOLife/Avalanche/status.png)](https://drone.io/github.com/SliceOLife/Avalanche/latest)
 =========
 
 The Avalanche issue project!

@@ -17,12 +17,9 @@
 <div class="container">
 	<div class="row">
 		<div class="col-sm-4 col-md-4 user-details">
-            <div class="user-image">
-                <img src="http://placehold.it/150x150" alt="User Image" title="{{ user.nickname }}" class="img-circle">
-            </div>
             <div class="user-info-block">
                 <div class="user-heading">
-                    <h3>{{ user.username}}</h3>
+                    <h3>{{ user.nickname}}</h3>
                     <span class="help-block">{{ user.email }}</span>
                 </div>
                 <ul class="navigation">
@@ -50,7 +47,9 @@
                 <div class="user-body">
                     <div class="tab-content">
                         <div id="information" class="tab-pane active">
-                            <h4>Account Information</h4>
+                            <h4>Account Informatie</h4>
+                            <p>Gebruikersnaam: {{ user.username }}</p>
+                            <p>Probleem Totaal: {{ user.total_problems }}</p>
                             <p>API key: {{ user.api_id }}</p>
                         </div>
                         <div id="settings" class="tab-pane">

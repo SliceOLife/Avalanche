@@ -28,6 +28,20 @@
               <input type="text" name="email" placeholder="E-mail" />
               <input type="text" name="nickname" placeholder="Nickname" />
               <input type="submit" value="Registreer" class="btn btn-success btn-sm" />
+              <div class="remember-forgot">
+                  <div class="row">
+                      <!---<div class="col-md-6">
+                          <div class="checkbox">
+                              <label>
+                                  <input type="checkbox" />
+                                  Onthoud mij
+                              </label>
+                          </div>
+                      </div>!---->
+                      <div class="col-md-6 register-new-content">
+                          <a href="{{ url_for('show_login') }}" class="reg-new">Al geregistreerd?</a>
+                      </div>
+                  </div>
             </form>
         </div>
       </div>

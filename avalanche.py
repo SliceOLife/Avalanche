@@ -11,12 +11,11 @@ from flask import Flask, request, session, redirect, url_for, \
     g
 from flask.ext.httpauth import HTTPBasicAuth
 from flask.ext.sqlalchemy import SQLAlchemy
+from flask.ext.login import LoginManager, login_user, logout_user, current_user, login_required
 from passlib.apps import custom_app_context as pwd_context
 
 # init config
 app = Flask(__name__)
-app.config['USERNAME'] = 'dev'
-app.config['PASSWORD'] = 'default'
 app.config['SECRET_KEY'] = 'the quick brown fox jumps over the lazy dog'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite'
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
@@ -29,6 +28,8 @@ ALLOWED_EXTENSIONS = {'zip'}
 # Extensions and such
 auth = HTTPBasicAuth()
 db = SQLAlchemy(app)
+lm = LoginManager()
+lm.init_app(app)
 app.config.from_object(__name__)
 
 
@@ -52,7 +53,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(128))
     email = db.Column(db.String(120), unique=True)
     nickname = db.Column(db.String(32))
-    total_problems = db.Column(db.Integer)
+    total_problems = db.Column(db.Integer, default=0)
     api_id = db.Column(db.String(32))
 
     def hash_password(self, password):
@@ -64,9 +65,34 @@ class User(db.Model):
     def generate_api_id(self):
       self.api_id = b64encode(urandom(9))
 
+    def is_authenticated(self):
+        return True
+
+    def is_active(self):
+        return True
+
+    def is_anonymous(self):
+        return False
+
+    def get_id(self):
+        return unicode(self.id)
+
+    def __repr__(self):
+        return '<User %r>' % (self.username)
+
 
 
 # utils and such
+
+@app.before_request
+def before_request():
+    g.user = current_user
+
+@lm.user_loader
+def load_user(id):
+    return User.query.get(int(id))
+
+
 def is_empty(any_structure):
     if any_structure:
         return False
@@ -81,16 +107,16 @@ def allowed_file(filename):
 
 @app.route('/')
 def show_entries():
-    if not session.get('logged_in'):
-      return render_template('reg_new.html')
-    else:
-      return render_template('post_new.html')
+  if not g.user.is_authenticated():
+    return redirect(url_for('show_login'))
+  else:
+    return render_template('post_new.html')
 
 
 @app.route('/add', methods=['POST'])
 def add_entry():
     i = datetime.now()
-    if not session.get('logged_in'):
+    if not g.user.is_authenticated():
         abort(401)
 
     if request.form['title'] is None or request.form['text'] is None or request.form['lang'] is None or request.form[
@@ -118,10 +144,9 @@ def add_entry():
         return render_template('post_success.html',
                                success='Bedankt voor het posten van uw probleem! Bewaar de volgende reeks goed om uw probleem te kunnen bewerken: ' + entry.uniqueid)
 
-@app.route('/register', methods=['POST'])
+@app.route('/createuser', methods=['POST'])
 def add_user():
-  i = datetime.now()
-  if session.get('logged_in'):
+  if g.user.is_authenticated():
     flash('U bent al geregistreerd!')
     return redirect(url_for('show_entries'))
   else:
@@ -138,6 +163,7 @@ def add_user():
     user.generate_api_id()
     db.session.add(user)
     db.session.commit()
+    login_user(user) # automatically login user after registration
     return render_template('profile.html', user=user)
 
 
@@ -151,20 +177,25 @@ def login():
     user = User.query.filter_by(username=username).first()
     if not user or not user.verify_password(password):
       error = 'Foutieve gebruikersnaam en of wachtwoord!'
-      return render_template('index_new.html', error=error)
-    g.user = user
-    session['logged_in'] = True
+      return render_template('index.html', error=error)
+    login_user(user)
     flash('U bent succesvol ingelogd')
     return redirect(url_for('show_entries'))
 
+@app.route('/register')
+def register_new():
+  return render_template('reg_new.html')
+
 
 @app.route('/exp')
+@login_required
 def show_entries_exp():
     entries = Entry.query.all()
     return render_template('show_entries_exp.html', entries=entries)
 
 
 @app.route('/exp_p')
+@login_required
 def post_entry_exp():
     return render_template('post_new.html')
 
@@ -177,19 +208,22 @@ def show_entries_projector():
 
 @app.route('/profile')
 def show_profile():
-    return render_template('profile.html')
+  if not g.user.is_authenticated():
+    return render_template('index.html')
+  return render_template('profile.html', user=g.user)
 
 
-@app.route('/indexn')
-def show_indexn():
-    return render_template('index_new.html')
+@app.route('/index')
+def show_login():
+    return render_template('index.html')
 
 
 @app.route('/logout')
+@login_required
 def logout():
-    session.pop('logged_in', None)
+    logout_user()
     flash("U bent succesvol uitgelogd")
-    return redirect(url_for('show_entries'))
+    return redirect(url_for('show_login'))
 
 
 @app.route('/uploads/<filename>')

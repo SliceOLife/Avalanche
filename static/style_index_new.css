@@ -192,3 +192,7 @@ form.login a:hover
     padding: 10px;
     left: 45%;
 }
+
+.invoice-title h2, .invoice-title h3 {
+    display: inline-block;
+}

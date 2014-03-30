@@ -23,6 +23,8 @@ app.config['UPLOAD_FOLDER'] = 'uploads/source/'
 
 # extra config
 ALLOWED_EXTENSIONS = {'zip'}
+ROLE_USER = 0
+ROLE_ADMIN = 1
 
 
 # Extensions and such
@@ -37,13 +39,15 @@ class Entry(db.Model):
     __tablename__ = 'entries'
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(32))
-    text = db.Column(db.Text())
+    body = db.Column(db.Text())
     lang = db.Column(db.String(32))
-    user = db.Column(db.String(32))
-    date = db.Column(db.String(32))
-    uniqueid = db.Column(db.String(100))
+    timestamp = db.Column(db.DateTime)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     fileloc = db.Column(db.String(100))
     isactive = db.Column(db.Integer)
+
+    def __repr__(self):
+        return '<Entry %r>' % (self.body)
 
 
 class User(db.Model):
@@ -53,6 +57,8 @@ class User(db.Model):
     password_hash = db.Column(db.String(128))
     email = db.Column(db.String(120), unique=True)
     nickname = db.Column(db.String(32))
+    role = db.Column(db.SmallInteger, default = ROLE_USER)
+    issues = db.relationship('Entry', backref = 'creator', lazy = 'dynamic')
     total_problems = db.Column(db.Integer, default=0)
     api_id = db.Column(db.String(32))
 
@@ -110,39 +116,35 @@ def show_entries():
   if not g.user.is_authenticated():
     return redirect(url_for('show_login'))
   else:
-    return render_template('post_new.html')
+    return redirect(url_for('post_entry'))
 
 
 @app.route('/add', methods=['POST'])
 def add_entry():
-    i = datetime.now()
     if not g.user.is_authenticated():
         abort(401)
 
-    if request.form['title'] is None or request.form['text'] is None or request.form['lang'] is None or request.form[
-        'user'] is None:
+    if request.form['title'] is None or request.form['body'] is None or request.form['lang'] is None:
         flash('Onvoldoende gegevens ingevuld, probeer het opnieuw.')
         return redirect(url_for('show_entries'))
     else:
         file = request.files['file']
-        uniqueid = str(uuid4())
         if file and allowed_file(file.filename):
-            filename = 'source_' + uniqueid + '.' + file.filename.rsplit('.', 1)[1]
+            filename = 'source_' + str(uuid4()) + '.' + file.filename.rsplit('.', 1)[1]
             fPath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(fPath)
             fileLoc = '/uploads/source/' + filename
         else:
             fileLoc = ""
             #return redirect(url_for('show_entries'))
-        entry = Entry(title=request.form['title'], text=request.form['text'], lang=request.form['lang'],
-                      user=request.form['user'], date=str(i.strftime('%Y/%m/%d %H:%M:%S')), uniqueid=uniqueid,
-                      fileloc=fileLoc, isactive=1)
+        entry = Entry(title=request.form['title'], body=request.form['body'], lang=request.form['lang'],
+                      timestamp=datetime.utcnow(), creator=g.user, fileloc=fileLoc, isactive=1)
         db.session.add(entry)
         db.session.commit()
         #flash(
         #'Bedankt voor het posten van uw probleem! Bewaar de volgende reeks goed om uw probleem te kunnen bewerken: ' + entry.uniqueid)
         return render_template('post_success.html',
-                               success='Bedankt voor het posten van uw probleem! Bewaar de volgende reeks goed om uw probleem te kunnen bewerken: ' + entry.uniqueid)
+                               success='Bedankt voor het posten van uw probleem!')
 
 @app.route('/createuser', methods=['POST'])
 def add_user():
@@ -158,13 +160,13 @@ def add_user():
         abort(400)    # missing arguments
     if User.query.filter_by(username=username).first() is not None:
         abort(400)    # existing user
-    user = User(username=username,email=email,nickname=nickname)
+    user = User(username=username,email=email,nickname=nickname, role=ROLE_USER)
     user.hash_password(password)
     user.generate_api_id()
     db.session.add(user)
     db.session.commit()
     login_user(user) # automatically login user after registration
-    return render_template('profile.html', user=user)
+    return redirect(url_for('show_profile'))
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -187,29 +189,38 @@ def register_new():
   return render_template('reg_new.html')
 
 
-@app.route('/exp')
+@app.route('/experimental/entries')
 @login_required
 def show_entries_exp():
     entries = Entry.query.all()
     return render_template('show_entries_exp.html', entries=entries)
 
 
-@app.route('/exp_p')
+@app.route('/post')
 @login_required
-def post_entry_exp():
+def post_entry():
     return render_template('post_new.html')
 
 
 @app.route('/projector')
+@login_required
 def show_entries_projector():
-    entries = Entry.query.all()
-    return render_template('show_entries_projector.html', entries=entries)
+    #entries = Entry.query.all()
+    #return render_template('show_entries_projector.html', entries=entries)
+    abort(404)
+
+@app.route('/test')
+def test_buildpack_heroku():
+  u = User.query.get(1)
+  print u
+  print u.issues.all()
+  return redirect(url_for('show_login'))
 
 
 @app.route('/profile')
 def show_profile():
   if not g.user.is_authenticated():
-    return render_template('index.html')
+    return redirect(url_for('show_login'))
   return render_template('profile.html', user=g.user)
 
 
@@ -252,7 +263,7 @@ def new_user():
 # Public API method. Gets list of all current issues in tracker.
 @app.route('/api/v1.0/issues/', methods=['GET'])
 def show_entries_api():
-    cols = ['id', 'title', 'text', 'lang', 'user', 'date', 'fileloc', 'isactive']
+    cols = ['id', 'title', 'body', 'lang', 'user_id', 'timestamp', 'fileloc', 'isactive']
     data = Entry.query.all()
     issue = [{col: getattr(d, col) for col in cols} for d in data]
 
@@ -267,7 +278,7 @@ def show_entries_api():
 # Public API method. Get specific issue by ID
 @app.route('/api/v1.0/issues/<int:api_id>', methods=['GET'])
 def show_entry_api(api_id):
-    cols = ['title', 'text', 'lang', 'user', 'date', 'fileloc', 'isactive']
+    cols = ['title', 'body', 'lang', 'user_id', 'timestamp', 'fileloc', 'isactive']
     data = Entry.query.filter(Entry.id == api_id).all()
     issue = [{col: getattr(d, col) for col in cols} for d in data]
 
@@ -292,8 +303,7 @@ def post_entry_api():
     if title is None or text is None:
         abort(400)  # missing arguments
 
-    entry = Entry(title=title, text=text, lang=lang, user=user, date=str(date.strftime('%Y/%m/%d %H:%M:%S')),
-                  uniqueid=str(uniqueid))
+    entry = Entry(title=title, text=text, lang=lang, user=user, timestamp=str(date.strftime('%Y/%m/%d %H:%M:%S')))
     db.session.add(entry)
     db.session.commit()
 

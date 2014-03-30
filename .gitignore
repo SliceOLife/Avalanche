@@ -44,3 +44,5 @@ env/.Python
 env/include/python2.7
 static/.DS_Store
 templates/.DS_Store
+
+*.jpg

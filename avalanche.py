@@ -3,15 +3,17 @@ from uuid import uuid4
 from datetime import datetime
 from base64 import b64encode
 from os import urandom
-import os, sys, hashlib
-
-from flask import Flask, request, session, redirect, url_for, \
+import os
+import sys
+import hashlib
+from flask import Flask, request, redirect, url_for, \
     abort, render_template, flash, make_response, jsonify, send_from_directory, \
     g
 from flask.ext.httpauth import HTTPBasicAuth
 from flask.ext.sqlalchemy import SQLAlchemy
 from flask.ext.login import LoginManager, login_user, logout_user, current_user, login_required
 from passlib.apps import custom_app_context as pwd_context
+
 
 # init config
 app = Flask(__name__)
@@ -56,19 +58,19 @@ class User(db.Model):
     password_hash = db.Column(db.String(128))
     email = db.Column(db.String(120), unique=True)
     nickname = db.Column(db.String(32))
-    role = db.Column(db.SmallInteger, default = ROLE_ADMIN)
-    issues = db.relationship('Entry', backref = 'creator', lazy = 'dynamic')
+    role = db.Column(db.SmallInteger, default=ROLE_ADMIN)
+    issues = db.relationship('Entry', backref='creator', lazy='dynamic')
     total_problems = db.Column(db.Integer, default=0)
     api_id = db.Column(db.String(32))
 
     def hash_password(self, password):
-      self.password_hash = pwd_context.encrypt(password)
+        self.password_hash = pwd_context.encrypt(password)
 
     def verify_password(self, password):
-      return pwd_context.verify(password, self.password_hash)
+        return pwd_context.verify(password, self.password_hash)
 
     def generate_api_id(self):
-      self.api_id = b64encode(urandom(9))
+        self.api_id = b64encode(urandom(9))
 
     def is_authenticated(self):
         return True
@@ -89,7 +91,6 @@ class User(db.Model):
         return 'http://www.gravatar.com/avatar/' + hashlib.md5(self.email).hexdigest() + '?d=mm&s=' + str(size)
 
 
-
 # utils and such
 
 @app.before_request
@@ -97,9 +98,10 @@ def before_request():
     g.user = current_user
     g.app_name = "Avalanche"
 
+
 @lm.user_loader
-def load_user(id):
-    return User.query.get(int(id))
+def load_user(uid):
+    return User.query.get(int(uid))
 
 
 def is_empty(any_structure):
@@ -113,19 +115,20 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
 
+
 # error handling
 
 @app.errorhandler(404)
 def page_not_found(e):
-  return render_template('error/404.html'), 404
+    return render_template('error/404.html'), 404
 
 
 @app.route('/')
 def show_main():
-  if not g.user.is_authenticated():
-    return redirect(url_for('show_login'))
-  else:
-    return redirect(url_for('show_profile'))
+    if not g.user.is_authenticated():
+        return redirect(url_for('show_login'))
+    else:
+        return redirect(url_for('show_profile'))
 
 
 @app.route('/add', methods=['POST'])
@@ -137,9 +140,9 @@ def add_entry():
         flash('Onvoldoende gegevens ingevuld, probeer het opnieuw.')
         return redirect(url_for('show_main'))
     else:
-        file = request.files['file']
-        if file and allowed_file(file.filename):
-            filename = 'source_' + str(uuid4()) + '.' + file.filename.rsplit('.', 1)[1]
+        fileupload = request.files['file']
+        if fileupload and allowed_file(fileupload.filename):
+            filename = 'source_' + str(uuid4()) + '.' + fileupload.filename.rsplit('.', 1)[1]
             fPath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(fPath)
             fileLoc = '/uploads/source/' + filename
@@ -153,47 +156,49 @@ def add_entry():
         flash('Bedankt voor het posten van uw probleem!')
         return redirect(url_for('show_profile'))
 
+
 @app.route('/createuser', methods=['POST'])
 def add_user():
-  if g.user.is_authenticated():
-    flash('U bent al geregistreerd!')
-    return redirect(url_for('show_main'))
-  else:
-    username = request.form['username']
-    password = request.form['password']
-    email = request.form['email']
-    nickname = request.form['nickname']
-    if username is None or password is None:
-        abort(400)    # missing arguments
-    if User.query.filter_by(username=username).first() is not None:
-        abort(400)    # existing user
-    user = User(username=username,email=email,nickname=nickname, role=ROLE_USER)
-    user.hash_password(password)
-    user.generate_api_id()
-    db.session.add(user)
-    db.session.commit()
-    login_user(user) # automatically login user after registration
-    return redirect(url_for('show_profile'))
+    if g.user.is_authenticated():
+        flash('U bent al geregistreerd!')
+        return redirect(url_for('show_main'))
+    else:
+        username = request.form['username']
+        password = request.form['password']
+        email = request.form['email']
+        nickname = request.form['nickname']
+        if username is None or password is None:
+            abort(400)  # missing arguments
+        if User.query.filter_by(username=username).first() is not None:
+            abort(400)  # existing user
+        user = User(username=username, email=email, nickname=nickname, role=ROLE_USER)
+        user.hash_password(password)
+        user.generate_api_id()
+        db.session.add(user)
+        db.session.commit()
+        login_user(user)  # automatically login user after registration
+        return redirect(url_for('show_profile'))
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-  username = request.form['username']
-  password = request.form['password']
-  error = None
+    username = request.form['username']
+    password = request.form['password']
+    error = None
 
-  if request.method == 'POST':
-    user = User.query.filter_by(username=username).first()
-    if not user or not user.verify_password(password):
-      error = 'Foutieve gebruikersnaam en of wachtwoord!'
-      return render_template('index.html', error=error)
-    login_user(user)
-    flash('U bent succesvol ingelogd')
-    return redirect(url_for('show_main'))
+    if request.method == 'POST':
+        user = User.query.filter_by(username=username).first()
+        if not user or not user.verify_password(password):
+            error = 'Foutieve gebruikersnaam en of wachtwoord!'
+            return render_template('index.html', error=error)
+        login_user(user)
+        flash('U bent succesvol ingelogd')
+        return redirect(url_for('show_main'))
+
 
 @app.route('/register')
 def register_new():
-  return render_template('reg_new.html')
+    return render_template('reg_new.html')
 
 
 @app.route('/experimental/entries')
@@ -216,19 +221,20 @@ def show_entries_projector():
     #return render_template('show_entries_projector.html', entries=entries)
     abort(404)
 
+
 @app.route('/test')
 def test_buildpack_heroku():
-  u = User.query.get(1)
-  print u
-  print u.issues.all()
-  return redirect(url_for('show_login'))
+    u = User.query.get(1)
+    print u
+    print u.issues.all()
+    return redirect(url_for('show_login'))
 
 
 @app.route('/profile')
 def show_profile():
-  if not g.user.is_authenticated():
-    return redirect(url_for('show_login'))
-  return render_template('profile.html', user=g.user)
+    if not g.user.is_authenticated():
+        return redirect(url_for('show_login'))
+    return render_template('profile.html', user=g.user)
 
 
 @app.route('/index')
@@ -252,59 +258,66 @@ def uploaded_file(filename):
 # Admin routing
 
 def is_authed_and_admin():
-  if g.user.is_authenticated() and g.user.role == ROLE_ADMIN:
-    return True
+    if g.user.is_authenticated() and g.user.role == ROLE_ADMIN:
+        return True
+
 
 @app.route('/admin/index')
 def admin_index():
-  if is_authed_and_admin():
-    return render_template('admin/index.html')
-  else:
-    return redirect(url_for('show_profile'))
+    if is_authed_and_admin():
+        return render_template('admin/index.html')
+    else:
+        return redirect(url_for('show_profile'))
+
 
 @app.route('/admin/adduser')
 def admin_adduser():
-  if is_authed_and_admin():
-    return render_template('admin/adduser.html')
-  else:
-    return redirect(url_for('show_profile'))
+    if is_authed_and_admin():
+        return render_template('admin/adduser.html')
+    else:
+        return redirect(url_for('show_profile'))
+
 
 @app.route('/admin/users')
 def admin_showusers():
-  if is_authed_and_admin():
-    Users = User.query.all()
-    return render_template('admin/users.html', users=Users)
-  else:
-    return redirect(url_for('show_profile'))
+    if is_authed_and_admin():
+        Users = User.query.all()
+        return render_template('admin/users.html', users=Users)
+    else:
+        return redirect(url_for('show_profile'))
+
 
 @app.route('/admin/users/<int:userid>')
 def admin_userdetail(userid):
-  if is_authed_and_admin():
-    currentUser = User.query.filter(id=userid).first()
-    return render_template('admin/userdetail.html', user=currentUser)
-  else:
-    return redirect(url_for('show_profile'))
+    if is_authed_and_admin():
+        currentUser = User.query.filter(id=userid).first()
+        return render_template('admin/userdetail.html', user=currentUser)
+    else:
+        return redirect(url_for('show_profile'))
+
 
 @app.route('/admin/killapp')
 def admin_killapp():
-  if is_authed_and_admin():
-    func = request.environ.get('werkzeug.server.shutdown')
-    if func is None:
-        raise RuntimeError('Not running with the Werkzeug Server')
-    func()
-    return 'Server shutting down...'
-  else:
-    return redirect(url_for('show_profile'))
+    if is_authed_and_admin():
+        func = request.environ.get('werkzeug.server.shutdown')
+        if func is None:
+            raise RuntimeError('Not running with the Werkzeug Server')
+        func()
+        return 'Server shutting down...'
+    else:
+        return redirect(url_for('show_profile'))
+
 
 @app.route('/admin/user/<string:func>/<int:userid>')
 def admin_usertools(func, userid):
-  if is_authed_and_admin():
-    if func == "delete":
-      isUser = User.query.filter_by(id=userid).first()
-      if isUser:
-        db.session.delete(isUser)
-        db.session.commit()
-  return redirect(url_for('admin_showusers'))
+    if is_authed_and_admin():
+        if func == "delete":
+            isUser = User.query.filter_by(id=userid).first()
+            if isUser:
+                db.session.delete(isUser)
+                db.session.commit()
+    return redirect(url_for('admin_showusers'))
+
 
 # API routing ( CRUD )
 

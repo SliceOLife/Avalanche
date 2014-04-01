@@ -1,15 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Avalanche | Inloggen</title>
-    <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css">
-
-<!-- Optional theme -->
-<link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap-theme.min.css">
-
-<!-- Latest compiled and minified JavaScript -->
-<script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
-<link rel=stylesheet type=text/css href="{{ url_for('static', filename='style_index_new.css') }}">
+    <title>{{ g.app_name }}</title>
+    <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootswatch/3.1.1/darkly/bootstrap.min.css">
+    <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+    <link rel=stylesheet type=text/css href="{{ url_for('static', filename='style_index_new.css') }}">
     <script> $(document).ready(function () {
     $('.forgot-pass').click(function(event) {
       $(".pr-wrap").toggleClass("show-pass-reset");

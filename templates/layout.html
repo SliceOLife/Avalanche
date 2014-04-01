@@ -1,19 +1,79 @@
 <!doctype html>
-<title>Avalanche {{ version }}</title>
-<link rel=stylesheet type=text/css href="{{ url_for('static', filename='style.css') }}">
-<div class=page>
-  <h1>Avalanche</h1>
-  <div class=metanav>
-  {% if not session.logged_in %}
-    <a href="{{ url_for('login') }}">Inloggen</a>
-  {% else %}
-    <a href="{{ url_for('logout') }}">Uitloggen</a>
-  {% endif %}
-  </div>
-  {% for message in get_flashed_messages() %}
-    <div class=flash>{{ message }}</div>
-  {% endfor %}
-  {% block body %}{% endblock %}
+<title>{{ g.app_name }}</title>
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style_default.css') }}">
+<link rel="stylesheet" type=text/css href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootswatch/3.1.1/darkly/bootstrap.min.css">
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js"></script>
+<script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="navbar-wrapper">
+                <div class="container">
+                    <div class="navbar navbar-inverse navbar-static-top" role="navigation">
+                        <div class="container">
+                            <div class="navbar-header">
+                                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                                    <span class="sr-only">Toggle navigation</span> <span class="icon-bar"></span><span
+                                        class="icon-bar"></span><span class="icon-bar"></span>
+                                </button>
+                                <a class="navbar-brand" href="#">{{ g.app_name }}</a>
+                            </div>
+                            <div class="navbar-collapse collapse">
+                                <ul class="nav navbar-nav">
+                                    <li><a href="{{ url_for('show_main')}}">Home</a></li>
+                                    <li><a href="{{ url_for('post_entry')}}">Post</a></li>
+                                    {% for message in get_flashed_messages() %}
+                                      <li>{{ message }}</li>
+                                    {% endfor %}
+                                    {% block body %}{% endblock %}
+                                </ul>
+                                <ul class="nav navbar-nav navbar-right">
+                                    <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">{{g.user.username}}
+                                      <b class="caret"></b></a>
+                                        <ul class="dropdown-menu">
+                                            <li>
+                                                <div class="navbar-content">
+                                                    <div class="row">
+                                                        <div class="col-md-5">
+                                                            <img src="{{g.user.avatar(100)}}"
+                                                                alt="{{g.user.nickname}}'s avatar" class="img-responsive" />
+                                                        </div>
+                                                        <div class="col-md-7">
+                                                            <span class="nick-muted">{{g.user.nickname}}</span>
+                                                            <p class="text-muted small">
+                                                                {{g.user.email}}
+                                                                Probleem totaal: {{g.user.total_problems}}</p>
+                                                            <div class="divider">
+                                                            </div>
+                                                            <p class="text-muted small">
+                                                              API key: {{g.user.api_id}}</p>
+                                                            <a href="#" class="text-muted small">Bekijk Profiel</a>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="navbar-footer">
+                                                    <div class="navbar-footer-content">
+                                                        <div class="row">
+                                                            <div class="col-md-6">
+                                                                <a href="#" class="btn btn-default btn-sm">Verander wachtwoord</a>
+                                                            </div>
+                                                            <div class="col-md-6">
+                                                                <a href="{{ url_for('logout')}}" class="btn btn-default btn-sm pull-right">Log uit</a>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        </ul>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
-
-
+</div>

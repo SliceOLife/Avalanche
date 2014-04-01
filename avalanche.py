@@ -3,9 +3,8 @@ from uuid import uuid4
 from datetime import datetime
 from base64 import b64encode
 from os import urandom
-import sys
+import os, sys, hashlib
 
-import os
 from flask import Flask, request, session, redirect, url_for, \
     abort, render_template, flash, make_response, jsonify, send_from_directory, \
     g
@@ -57,7 +56,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(128))
     email = db.Column(db.String(120), unique=True)
     nickname = db.Column(db.String(32))
-    role = db.Column(db.SmallInteger, default = ROLE_USER)
+    role = db.Column(db.SmallInteger, default = ROLE_ADMIN)
     issues = db.relationship('Entry', backref = 'creator', lazy = 'dynamic')
     total_problems = db.Column(db.Integer, default=0)
     api_id = db.Column(db.String(32))
@@ -86,6 +85,9 @@ class User(db.Model):
     def __repr__(self):
         return '<User %r>' % (self.username)
 
+    def avatar(self, size):
+        return 'http://www.gravatar.com/avatar/' + hashlib.md5(self.email).hexdigest() + '?d=mm&s=' + str(size)
+
 
 
 # utils and such
@@ -93,6 +95,7 @@ class User(db.Model):
 @app.before_request
 def before_request():
     g.user = current_user
+    g.app_name = "Avalanche"
 
 @lm.user_loader
 def load_user(id):
@@ -110,13 +113,19 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
 
+# error handling
+
+@app.errorhandler(404)
+def page_not_found(e):
+  return render_template('error/404.html'), 404
+
 
 @app.route('/')
-def show_entries():
+def show_main():
   if not g.user.is_authenticated():
     return redirect(url_for('show_login'))
   else:
-    return redirect(url_for('post_entry'))
+    return redirect(url_for('show_profile'))
 
 
 @app.route('/add', methods=['POST'])
@@ -126,7 +135,7 @@ def add_entry():
 
     if request.form['title'] is None or request.form['body'] is None or request.form['lang'] is None:
         flash('Onvoldoende gegevens ingevuld, probeer het opnieuw.')
-        return redirect(url_for('show_entries'))
+        return redirect(url_for('show_main'))
     else:
         file = request.files['file']
         if file and allowed_file(file.filename):
@@ -136,21 +145,19 @@ def add_entry():
             fileLoc = '/uploads/source/' + filename
         else:
             fileLoc = ""
-            #return redirect(url_for('show_entries'))
+            #return redirect(url_for('show_main'))
         entry = Entry(title=request.form['title'], body=request.form['body'], lang=request.form['lang'],
                       timestamp=datetime.utcnow(), creator=g.user, fileloc=fileLoc, isactive=1)
         db.session.add(entry)
         db.session.commit()
-        #flash(
-        #'Bedankt voor het posten van uw probleem! Bewaar de volgende reeks goed om uw probleem te kunnen bewerken: ' + entry.uniqueid)
-        return render_template('post_success.html',
-                               success='Bedankt voor het posten van uw probleem!')
+        flash('Bedankt voor het posten van uw probleem!')
+        return redirect(url_for('show_profile'))
 
 @app.route('/createuser', methods=['POST'])
 def add_user():
   if g.user.is_authenticated():
     flash('U bent al geregistreerd!')
-    return redirect(url_for('show_entries'))
+    return redirect(url_for('show_main'))
   else:
     username = request.form['username']
     password = request.form['password']
@@ -182,7 +189,7 @@ def login():
       return render_template('index.html', error=error)
     login_user(user)
     flash('U bent succesvol ingelogd')
-    return redirect(url_for('show_entries'))
+    return redirect(url_for('show_main'))
 
 @app.route('/register')
 def register_new():
@@ -242,6 +249,63 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
+# Admin routing
+
+def is_authed_and_admin():
+  if g.user.is_authenticated() and g.user.role == ROLE_ADMIN:
+    return True
+
+@app.route('/admin/index')
+def admin_index():
+  if is_authed_and_admin():
+    return render_template('admin/index.html')
+  else:
+    return redirect(url_for('show_profile'))
+
+@app.route('/admin/adduser')
+def admin_adduser():
+  if is_authed_and_admin():
+    return render_template('admin/adduser.html')
+  else:
+    return redirect(url_for('show_profile'))
+
+@app.route('/admin/users')
+def admin_showusers():
+  if is_authed_and_admin():
+    Users = User.query.all()
+    return render_template('admin/users.html', users=Users)
+  else:
+    return redirect(url_for('show_profile'))
+
+@app.route('/admin/users/<int:userid>')
+def admin_userdetail(userid):
+  if is_authed_and_admin():
+    currentUser = User.query.filter(id=userid).first()
+    return render_template('admin/userdetail.html', user=currentUser)
+  else:
+    return redirect(url_for('show_profile'))
+
+@app.route('/admin/killapp')
+def admin_killapp():
+  if is_authed_and_admin():
+    func = request.environ.get('werkzeug.server.shutdown')
+    if func is None:
+        raise RuntimeError('Not running with the Werkzeug Server')
+    func()
+    return 'Server shutting down...'
+  else:
+    return redirect(url_for('show_profile'))
+
+@app.route('/admin/user/<string:func>/<int:userid>')
+def admin_usertools(func, userid):
+  if is_authed_and_admin():
+    if func == "delete":
+      isUser = User.query.filter_by(id=userid).first()
+      if isUser:
+        db.session.delete(isUser)
+        db.session.commit()
+  return redirect(url_for('admin_showusers'))
+
 # API routing ( CRUD )
 
 @app.route('/api/users', methods=['POST'])
@@ -262,7 +326,7 @@ def new_user():
 
 # Public API method. Gets list of all current issues in tracker.
 @app.route('/api/v1.0/issues/', methods=['GET'])
-def show_entries_api():
+def show_main_api():
     cols = ['id', 'title', 'body', 'lang', 'user_id', 'timestamp', 'fileloc', 'isactive']
     data = Entry.query.all()
     issue = [{col: getattr(d, col) for col in cols} for d in data]

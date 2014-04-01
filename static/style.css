@@ -1,4 +1,4 @@
-body            { font-family: 'Helvetica Neue'; background: #eee; background-image:url('bg_reg_alt.jpg'); }
+body            { font-family: 'Helvetica Neue'; background: url('bg_general.jpg') fixed; background-size: cover; }
 a, h1, h2, dt   { color: #377ba8; }
 h1, h2          { font-family: 'Helvetica Neue'; margin: 0; }
 h1              { /* border-bottom: 2px solid #eee; */ }

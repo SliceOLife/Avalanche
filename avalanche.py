@@ -96,7 +96,7 @@ class User(db.Model):
 @app.before_request
 def before_request():
     g.user = current_user
-    g.app_name = "Avalanche"
+    g.app_name = "Avalanche Alpha"
 
 
 @lm.user_loader
@@ -138,7 +138,7 @@ def add_entry():
 
     if request.form['title'] is None or request.form['body'] is None or request.form['lang'] is None:
         flash('Onvoldoende gegevens ingevuld, probeer het opnieuw.')
-        return redirect(url_for('show_main'))
+        return redirect(url_for('post_entry'))
     else:
         fileupload = request.files['file']
         if fileupload and allowed_file(fileupload.filename):
@@ -246,7 +246,6 @@ def show_login():
 @login_required
 def logout():
     logout_user()
-    flash("U bent succesvol uitgelogd")
     return redirect(url_for('show_login'))
 
 

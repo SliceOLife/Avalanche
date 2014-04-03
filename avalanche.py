@@ -87,16 +87,24 @@ class User(db.Model):
     def __repr__(self):
         return '<User %r>' % (self.username)
 
-    def avatar(self, size):
-        return 'http://www.gravatar.com/avatar/' + hashlib.md5(self.email).hexdigest() + '?d=mm&s=' + str(size)
+    def avatar(self):
+        return 'http://www.gravatar.com/avatar/' + hashlib.md5(self.email).hexdigest() + '?d=mm&s=100'
 
 
 # utils and such
 
 @app.before_request
 def before_request():
-    g.user = current_user
-    g.app_name = "Avalanche Alpha"
+  g.user = current_user
+  # Dirty hack for new nav
+  if not g.user.is_authenticated():
+    g.user.api_id = "N/A"
+    g.user.issues = "N/A"
+    g.user.avatar = ""
+    g.user.nickname = "Anonymous"
+    g.user.username = "Anonymous"
+    g.user.email = "anonymous@drone.codecove.net"
+  g.app_name = "Avalanche Alpha"
 
 
 @lm.user_loader

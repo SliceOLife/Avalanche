@@ -4,7 +4,7 @@
     <title>{{ g.app_name }}</title>
     <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootswatch/3.1.1/darkly/bootstrap.min.css">
     <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
-    <link rel=stylesheet type=text/css href="{{ url_for('static', filename='style_index_new.css') }}">
+    <link rel=stylesheet type=text/css href="{{ url_for('static', filename='style_default.css') }}">
     <script> $(document).ready(function () {
     $('.forgot-pass').click(function(event) {
       $(".pr-wrap").toggleClass("show-pass-reset");
@@ -18,15 +18,6 @@
 <body>
 <div class="container">
     <div class="row">
-        <div class="col-md-12">
-            <div class="pr-wrap">
-                <div class="pass-reset">
-                    <label>
-                        Enter the email you signed up with</label>
-                    <input type="email" placeholder="Email" />
-                    <input type="submit" value="Submit" class="pass-reset-submit btn btn-success btn-sm" />
-                </div>
-            </div>
             <div class="wrap">
                 <p class="form-title">
                     Inloggen</p>

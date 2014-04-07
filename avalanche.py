@@ -383,7 +383,7 @@ def show_entry_api(api_id):
         return jsonify(issue=issue)
 
 
-# Public API method. Post a new issue to tracker.
+# Private API method. Post a new issue to tracker.
 # TODO: Look into file upload using post.
 @app.route('/api/v1.0/issues/', methods=['POST'])
 def post_entry_api():
@@ -411,7 +411,7 @@ def post_entry_api():
         return make_response(jsonify({'error': 'Invalid arguments'}), 400)
 
 
-# Private API method. Modify issue by unique ID assigned on issue creation
+# Private API method. Modify issue.
 @app.route('/api/v1.0/issues/<int:issue_id>/update', methods=['POST'])
 def update_entry_api(issue_id):
     title = request.json.get('title')
@@ -431,11 +431,10 @@ def update_entry_api(issue_id):
             response.status_code = 404
             return response
         else:
-            issue.title = utitle
-            issue.text = utext
-            issue.lang = ulang
-            issue.user = uuser
-            issue.date = udate
+            issue.title = title
+            issue.body = text
+            issue.lang = lang
+            issue.timestamp = datetime.utcnow()
             db.session.commit()
 
             response = jsonify({'success': 'true', 'uuid': uuniqueid})
@@ -445,7 +444,7 @@ def update_entry_api(issue_id):
         return make_response(jsonify({'error': 'Invalid user API key'}), 400)
 
 
-# Private API method. Mark issue inactive by unique ID assigned on issue creation
+# Private API method. Mark issue inactive.
 @app.route('/api/v1.0/issues/<int:issue_id>/deactivate', methods=['POST'])
 def inactive_entry_api(issue_id):
     user_apid = request.json.get('api_id')
@@ -471,7 +470,7 @@ def inactive_entry_api(issue_id):
         return make_response(jsonify({'error': 'Invalid user API key'}), 400)
 
 
-# Private API method. Mark issue inactive by unique ID assigned on issue creation
+# Private API method. Mark issue active.
 @app.route('/api/v1.0/issues/<int:issue_id>/activate', methods=['POST'])
 def activate_entry_api(issue_id):
     user_apid = request.json.get('api_id')
@@ -497,7 +496,7 @@ def activate_entry_api(issue_id):
         return make_response(jsonify({'error': 'Invalid user API key'}), 400)
 
 
-# Private API method. Delete issue by unique ID assigned on issue creation
+# Private API method. Delete issue.
 @app.route('/api/v1.0/issues/<int:issue_id>/delete', methods=['POST'])
 def delete_entry_api(issue_id):
     user_apid = request.json.get('api_id')

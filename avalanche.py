@@ -1,11 +1,12 @@
 # all the imports
 from uuid import uuid4
-from datetime import datetime
 from base64 import b64encode
+import hashlib
+
+from datetime import datetime
 from os import urandom
 import os
 import sys
-import hashlib
 from flask import Flask, request, redirect, url_for, \
     abort, render_template, flash, make_response, jsonify, send_from_directory, \
     g
@@ -13,6 +14,7 @@ from flask.ext.httpauth import HTTPBasicAuth
 from flask.ext.sqlalchemy import SQLAlchemy
 from flask.ext.login import LoginManager, login_user, logout_user, current_user, login_required
 from passlib.apps import custom_app_context as pwd_context
+
 
 
 # init config
@@ -58,7 +60,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(128))
     email = db.Column(db.String(120), unique=True)
     nickname = db.Column(db.String(32))
-    role = db.Column(db.SmallInteger, default=ROLE_ADMIN)
+    role = db.Column(db.SmallInteger, default=ROLE_USER)
     issues = db.relationship('Entry', backref='creator', lazy='dynamic')
     total_problems = db.Column(db.Integer, default=0)
     api_id = db.Column(db.String(32))
@@ -95,16 +97,16 @@ class User(db.Model):
 
 @app.before_request
 def before_request():
-  g.user = current_user
-  # Dirty hack for new nav
-  if not g.user.is_authenticated():
-    g.user.api_id = "N/A"
-    g.user.issues = "N/A"
-    g.user.avatar = ""
-    g.user.nickname = "Anonymous"
-    g.user.username = "Anonymous"
-    g.user.email = "anonymous@drone.codecove.net"
-  g.app_name = "Avalanche Alpha"
+    g.user = current_user
+    # Dirty hack for new nav
+    if not g.user.is_authenticated():
+        g.user.api_id = "N/A"
+        g.user.issues = "N/A"
+        g.user.avatar = ""
+        g.user.nickname = "Anonymous"
+        g.user.username = "Anonymous"
+        g.user.email = "anonymous@drone.codecove.net"
+    g.app_name = "Avalanche Alpha"
 
 
 @lm.user_loader
@@ -127,7 +129,7 @@ def allowed_file(filename):
 # error handling
 
 @app.errorhandler(404)
-def page_not_found(e):
+def page_not_found():
     return render_template('error/404.html'), 404
 
 
@@ -160,6 +162,11 @@ def add_entry():
         entry = Entry(title=request.form['title'], body=request.form['body'], lang=request.form['lang'],
                       timestamp=datetime.utcnow(), creator=g.user, fileloc=fileLoc, isactive=1)
         db.session.add(entry)
+
+        # Update user problem count
+        currentProblems = g.user.total_problems
+        g.user.total_problems = currentProblems + 1
+        db.session.add(g.user)
         db.session.commit()
         flash('Bedankt voor het posten van uw probleem!')
         return redirect(url_for('show_profile'))
@@ -328,20 +335,22 @@ def admin_usertools(func, userid):
 
 # API routing ( CRUD )
 
-@app.route('/api/users', methods=['POST'])
+@app.route('/api/v1.0/users/', methods=['POST'])
 def new_user():
     username = request.json.get('username')
     password = request.json.get('password')
+    email = request.json.get('email')
+    nickname = request.json.get('nickname')
     if username is None or password is None:
         abort(400)  # missing arguments
     if User.query.filter_by(username=username).first() is not None:
         abort(400)  # existing user
-    user = User(username=username)
+    user = User(username=username, email=email, nickname=nickname)
     user.hash_password(password)
     user.generate_api_id()
     db.session.add(user)
     db.session.commit()
-    return jsonify({'username': user.username}), 201, {'Location': url_for('get_user', id=user.id, _external=True)}
+    return jsonify({'username': user.username, 'api_id': user.api_id})
 
 
 # Public API method. Gets list of all current issues in tracker.
@@ -376,129 +385,150 @@ def show_entry_api(api_id):
 
 # Public API method. Post a new issue to tracker.
 # TODO: Look into file upload using post.
-@app.route('/api/v1.0/issues/post', methods=['POST'])
+@app.route('/api/v1.0/issues/', methods=['POST'])
 def post_entry_api():
     title = request.json.get('title')
-    text = request.json.get('text')
+    text = request.json.get('body')
     lang = request.json.get('lang')
-    user = request.json.get('user')
-    date = datetime.now()
-    uniqueid = uuid4()
-    if title is None or text is None:
-        abort(400)  # missing arguments
+    user_apid = request.json.get('api_id')
 
-    entry = Entry(title=title, text=text, lang=lang, user=user, timestamp=str(date.strftime('%Y/%m/%d %H:%M:%S')))
-    db.session.add(entry)
-    db.session.commit()
+    if title is None or text is None or user_apid is None:
+        return make_response(jsonify({'error': 'Invalid arguments'}), 400)
 
-    response = jsonify({'success': 'true', 'uuid': entry.uniqueid})
-    response.status_code = 201
-    return response
+    creator = User.query.filter_by(api_id=user_apid).first()
+    if creator is not None:
+        entry = Entry(title=title, body=text, lang=lang, creator=creator, timestamp=datetime.utcnow(), isactive=1)
+        # update creator problem count
+        creator.total_problems = creator.total_problems + 1
+        db.session.add(creator)
+        db.session.add(entry)
+        db.session.commit()
+
+        response = jsonify({'success': 'true', 'issue_id': entry.id})
+        response.status_code = 201
+        return response
+    else:
+        return make_response(jsonify({'error': 'Invalid arguments'}), 400)
 
 
 # Private API method. Modify issue by unique ID assigned on issue creation
-@app.route('/api/v1.0/issues/update', methods=['POST'])
-def update_entry_api():
-    utitle = request.json.get('title')
-    utext = request.json.get('text')
-    ulang = request.json.get('lang')
-    uuser = request.json.get('user')
-    udate = datetime.now()
-    uuniqueid = request.json.get('uniqueid')
-    if utitle is None or utext is None or uuniqueid is None:
-        abort(400)  # missing args
+@app.route('/api/v1.0/issues/<int:issue_id>/update', methods=['POST'])
+def update_entry_api(issue_id):
+    title = request.json.get('title')
+    text = request.json.get('body')
+    lang = request.json.get('lang')
+    user_apid = request.json.get('api_id')
 
-    issue = Entry.query.filter(Entry.uniqueid == uuniqueid).first()
+    if title is None or text is None or user_apid is None:
+        return make_response(jsonify({'error': 'Invalid arguments'}), 400)
 
-    if is_empty(issue):
-        response = jsonify({'error': 'unknown issue'})
-        response.status_code = 404
-        return response
+    creator = User.query.filter_by(api_id=user_apid).first()
+    issue = Entry.query.filter_by(id=issue_id).first()
+
+    if creator is not None:
+        if is_empty(issue):
+            response = jsonify({'error': 'unknown issue'})
+            response.status_code = 404
+            return response
+        else:
+            issue.title = utitle
+            issue.text = utext
+            issue.lang = ulang
+            issue.user = uuser
+            issue.date = udate
+            db.session.commit()
+
+            response = jsonify({'success': 'true', 'uuid': uuniqueid})
+            response.status_code = 200
+            return response
     else:
-        issue.title = utitle
-        issue.text = utext
-        issue.lang = ulang
-        issue.user = uuser
-        issue.date = udate
-        db.session.commit()
-
-        response = jsonify({'success': 'true', 'uuid': uuniqueid})
-        response.status_code = 200
-        return response
+        return make_response(jsonify({'error': 'Invalid user API key'}), 400)
 
 
 # Private API method. Mark issue inactive by unique ID assigned on issue creation
-@app.route('/api/v1.0/issues/deactivate', methods=['POST'])
-def inactive_entry_api():
-    uniqueid = request.json.get('uniqueid')
-    if uniqueid is None:
+@app.route('/api/v1.0/issues/<int:issue_id>/deactivate', methods=['POST'])
+def inactive_entry_api(issue_id):
+    user_apid = request.json.get('api_id')
+    if user_apid is None:
         return make_response(jsonify({'error': 'Invalid arguments'}), 400)
 
-    issue = Entry.query.filter(Entry.uniqueid == uniqueid).first()
+    issue = Entry.query.filter_by(id=issue_id).first()
+    creator = User.query.filter_by(api_id=user_apid).first()
 
-    if is_empty(issue):
-        response = jsonify({'error': 'unknown issue'})
-        response.status_code = 404
-        return response
+    if creator is not None:
+        if is_empty(issue):
+            response = jsonify({'error': 'issue not found'})
+            response.status_code = 404
+            return response
+        else:
+            issue.isactive = 0
+            db.session.commit()
+
+            response = jsonify({'success': 'true', 'issue_id': issue.id})
+            response.status_code = 200
+            return response
     else:
-        issue.isactive = 0
-        db.session.commit()
-
-        response = jsonify({'success': 'true', 'uuid': uniqueid})
-        response.status_code = 200
-        return response
+        return make_response(jsonify({'error': 'Invalid user API key'}), 400)
 
 
-# Private API method. Mark issue active by unique ID assigned on issue creation
-@app.route('/api/v1.0/issues/activate', methods=['POST'])
-def active_entry_api():
-    uniqueid = request.json.get('uniqueid')
-    if uniqueid is None:
+# Private API method. Mark issue inactive by unique ID assigned on issue creation
+@app.route('/api/v1.0/issues/<int:issue_id>/activate', methods=['POST'])
+def activate_entry_api(issue_id):
+    user_apid = request.json.get('api_id')
+    if user_apid is None:
         return make_response(jsonify({'error': 'Invalid arguments'}), 400)
 
-    issue = Entry.query.filter(Entry.uniqueid == uniqueid).first()
+    issue = Entry.query.filter_by(id=issue_id).first()
+    creator = User.query.filter_by(api_id=user_apid).first()
 
-    if is_empty(issue):
-        response = jsonify({'error': 'unknown issue'})
-        response.status_code = 404
-        return response
+    if creator is not None:
+        if is_empty(issue):
+            response = jsonify({'error': 'issue not found'})
+            response.status_code = 404
+            return response
+        else:
+            issue.isactive = 1
+            db.session.commit()
+
+            response = jsonify({'success': 'true', 'issue_id': issue.id})
+            response.status_code = 200
+            return response
     else:
-        issue.isactive = 1
-        db.session.commit()
-
-        response = jsonify({'success': 'true', 'uuid': uniqueid})
-        response.status_code = 200
-        return response
+        return make_response(jsonify({'error': 'Invalid user API key'}), 400)
 
 
 # Private API method. Delete issue by unique ID assigned on issue creation
-@app.route('/api/v1.0/issues/delete', methods=['POST'])
-def delete_entry_api():
-    uniqueid = request.json.get('uniqueid')
-    if uniqueid is None:
+@app.route('/api/v1.0/issues/<int:issue_id>/delete', methods=['POST'])
+def delete_entry_api(issue_id):
+    user_apid = request.json.get('api_id')
+    if user_apid is None:
         return make_response(jsonify({'error': 'Invalid arguments'}), 400)
 
-    issue = Entry.query.filter(Entry.uniqueid == uniqueid).first()
+    issue = Entry.query.filter_by(id=issue_id).first()
+    creator = User.query.filter_by(api_id=user_apid).first()
 
-    if is_empty(issue):
-        response = jsonify({'error': 'unknown issue'})
-        response.status_code = 404
-        return response
-    else:
-        db.session.delete(issue)
-        db.session.commit()
-
-        # We need to kill the corresponding source files too if they exist
-        sourcefile = os.path.dirname(os.path.realpath(sys.argv[0])) + issue.fileloc
-        if os.path.isfile(sourcefile):
-            os.remove(sourcefile)
-        else:
-            response = jsonify({'success': 'false', 'fileloc_del': sourcefile})
-            response.status_code = 500
+    if creator is not None:
+        if is_empty(issue):
+            response = jsonify({'error': 'issue not found'})
+            response.status_code = 404
             return response
-        response = jsonify({'success': 'true'})
-        response.status_code = 200
-        return response
+        else:
+            db.session.delete(issue)
+            db.session.commit()
+
+            # We need to kill the corresponding source files too if they exist
+            sourcefile = os.path.dirname(os.path.realpath(sys.argv[0])) + issue.fileloc
+            if os.path.isfile(sourcefile):
+                os.remove(sourcefile)
+            else:
+                response = jsonify({'success': 'false', 'fileloc_del': sourcefile})
+                response.status_code = 500
+                return response
+            response = jsonify({'success': 'true', 'issue_id': issue.id})
+            response.status_code = 200
+            return response
+    else:
+        return make_response(jsonify({'error': 'Invalid user API key'}), 400)
 
 
 if __name__ == '__main__':

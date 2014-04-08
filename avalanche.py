@@ -127,6 +127,16 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
 
+def handleUpload(upload):
+  if upload and allowed_file(upload.filename):
+      upload = 'source_' + str(uuid4()) + '.' + upload.filename.rsplit('.', 1)[1]
+      fPath = os.path.join(app.config['UPLOAD_FOLDER'], upload)
+      file.save(fPath)
+      fileLoc = '/uploads/source/' + upload
+  else:
+      fileLoc = ""
+  return fileLoc
+
 
 # error handling
 
@@ -153,17 +163,9 @@ def add_entry():
         flash('Onvoldoende gegevens ingevuld, probeer het opnieuw.')
         return redirect(url_for('post_entry'))
     else:
-        fileupload = request.files['file']
-        if fileupload and allowed_file(fileupload.filename):
-            filename = 'source_' + str(uuid4()) + '.' + fileupload.filename.rsplit('.', 1)[1]
-            fPath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(fPath)
-            fileLoc = '/uploads/source/' + filename
-        else:
-            fileLoc = ""
-            #return redirect(url_for('show_main'))
+        fileupload = handleUpload(request.files['file'])
         entry = Entry(title=request.form['title'], body=request.form['body'], lang=request.form['lang'],
-                      timestamp=datetime.utcnow(), creator=g.user, fileloc=fileLoc, isactive=1)
+                      timestamp=datetime.utcnow(), creator=g.user, fileloc=fileupload, isactive=1)
         db.session.add(entry)
 
         # Update user problem count
@@ -402,13 +404,15 @@ def post_entry_api():
     text = request.json.get('body')
     lang = request.json.get('lang')
     user_apid = request.json.get('api_id')
+    fileupload = handleUpload(request.files['file'])
 
     if title is None or text is None or user_apid is None:
         return make_response(jsonify({'error': 'Invalid arguments'}), 400)
 
     creator = User.query.filter_by(api_id=user_apid).first()
     if creator is not None:
-        entry = Entry(title=title, body=text, lang=lang, creator=creator, timestamp=datetime.utcnow(), isactive=1)
+        entry = Entry(title=title, body=text, lang=lang,
+                      timestamp=datetime.utcnow(), creator=creator, fileloc=fileupload, isactive=1)
         # update creator problem count
         creator.total_problems = creator.total_problems + 1
         db.session.add(creator)

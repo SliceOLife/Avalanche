@@ -2,11 +2,11 @@
 from uuid import uuid4
 from base64 import b64encode
 import hashlib
-
 from datetime import datetime
+import sys
+
 from os import urandom
 import os
-import sys
 from flask import Flask, request, redirect, url_for, \
     abort, render_template, flash, make_response, jsonify, send_from_directory, \
     g
@@ -14,6 +14,8 @@ from flask.ext.httpauth import HTTPBasicAuth
 from flask.ext.sqlalchemy import SQLAlchemy
 from flask.ext.login import LoginManager, login_user, logout_user, current_user, login_required
 from passlib.apps import custom_app_context as pwd_context
+
+
 
 
 
@@ -129,7 +131,8 @@ def allowed_file(filename):
 # error handling
 
 @app.errorhandler(404)
-def page_not_found():
+def page_not_found(e):
+    print(e)
     return render_template('error/404.html'), 404
 
 
@@ -354,10 +357,18 @@ def new_user():
 
 
 # Public API method. Gets list of all current issues in tracker.
-@app.route('/api/v1.0/issues/', methods=['GET'])
-def show_main_api():
+@app.route('/api/v1.0/issues/<string:retype>', methods=['GET'])
+def show_main_api(retype):
+    if retype == "all":
+        data = Entry.query.all()
+    elif retype == "active":
+        data = Entry.query.filter(Entry.isactive == 1).all()
+    elif retype == "inactive":
+        data = Entry.query.filter(Entry.isactive == 0).all()
+    else:
+        data = Entry.query.all()
+
     cols = ['id', 'title', 'body', 'lang', 'user_id', 'timestamp', 'fileloc', 'isactive']
-    data = Entry.query.all()
     issue = [{col: getattr(d, col) for col in cols} for d in data]
 
     if is_empty(issue):
@@ -426,20 +437,23 @@ def update_entry_api(issue_id):
     issue = Entry.query.filter_by(id=issue_id).first()
 
     if creator is not None:
-        if is_empty(issue):
-            response = jsonify({'error': 'unknown issue'})
-            response.status_code = 404
-            return response
-        else:
-            issue.title = title
-            issue.body = text
-            issue.lang = lang
-            issue.timestamp = datetime.utcnow()
-            db.session.commit()
+        if issue.user_id is creator.id:
+            if is_empty(issue):
+                response = jsonify({'error': 'unknown issue'})
+                response.status_code = 404
+                return response
+            else:
+                issue.title = title
+                issue.body = text
+                issue.lang = lang
+                issue.timestamp = datetime.utcnow()
+                db.session.commit()
 
-            response = jsonify({'success': 'true', 'uuid': uuniqueid})
-            response.status_code = 200
-            return response
+                response = jsonify({'success': 'true', 'uuid': uuniqueid})
+                response.status_code = 200
+                return response
+        else:
+            return make_response(jsonify({'error': "This issue doesn't belong to: " + creator.username}), 400)
     else:
         return make_response(jsonify({'error': 'Invalid user API key'}), 400)
 
@@ -452,20 +466,24 @@ def inactive_entry_api(issue_id):
         return make_response(jsonify({'error': 'Invalid arguments'}), 400)
 
     issue = Entry.query.filter_by(id=issue_id).first()
+
+    if is_empty(issue):
+        response = jsonify({'error': 'unknown issue'})
+        response.status_code = 404
+        return response
+
     creator = User.query.filter_by(api_id=user_apid).first()
 
     if creator is not None:
-        if is_empty(issue):
-            response = jsonify({'error': 'issue not found'})
-            response.status_code = 404
-            return response
-        else:
+        if issue.user_id is creator.id:
             issue.isactive = 0
             db.session.commit()
 
             response = jsonify({'success': 'true', 'issue_id': issue.id})
             response.status_code = 200
             return response
+        else:
+            return make_response(jsonify({'error': "This issue doesn't belong to: " + creator.username}), 400)
     else:
         return make_response(jsonify({'error': 'Invalid user API key'}), 400)
 
@@ -478,20 +496,24 @@ def activate_entry_api(issue_id):
         return make_response(jsonify({'error': 'Invalid arguments'}), 400)
 
     issue = Entry.query.filter_by(id=issue_id).first()
+
+    if is_empty(issue):
+        response = jsonify({'error': 'issue not found'})
+        response.status_code = 404
+        return response
+
     creator = User.query.filter_by(api_id=user_apid).first()
 
     if creator is not None:
-        if is_empty(issue):
-            response = jsonify({'error': 'issue not found'})
-            response.status_code = 404
-            return response
-        else:
+        if issue.user_id is creator.id:
             issue.isactive = 1
             db.session.commit()
 
             response = jsonify({'success': 'true', 'issue_id': issue.id})
             response.status_code = 200
             return response
+        else:
+            return make_response(jsonify({'error': "This issue doesn't belong to: " + creator.username}), 400)
     else:
         return make_response(jsonify({'error': 'Invalid user API key'}), 400)
 
@@ -507,15 +529,9 @@ def delete_entry_api(issue_id):
     creator = User.query.filter_by(api_id=user_apid).first()
 
     if creator is not None:
-        if is_empty(issue):
-            response = jsonify({'error': 'issue not found'})
-            response.status_code = 404
-            return response
-        else:
+        if issue.user_id is creator.id:
             db.session.delete(issue)
-            db.session.commit()
-
-            # We need to kill the corresponding source files too if they exist
+            db.session.commit()  # We need to kill the corresponding source files too if they exist
             sourcefile = os.path.dirname(os.path.realpath(sys.argv[0])) + issue.fileloc
             if os.path.isfile(sourcefile):
                 os.remove(sourcefile)
@@ -526,9 +542,11 @@ def delete_entry_api(issue_id):
             response = jsonify({'success': 'true', 'issue_id': issue.id})
             response.status_code = 200
             return response
-    else:
-        return make_response(jsonify({'error': 'Invalid user API key'}), 400)
+        else:
+          return make_response(jsonify({'error': "This issue doesn't belong to: " + creator.username}), 400)
 
+    else:
+      return make_response(jsonify({'error': 'Invalid user API key'}), 400)
 
 if __name__ == '__main__':
     if not os.path.exists('db.sqlite'):

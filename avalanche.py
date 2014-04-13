@@ -64,7 +64,7 @@ class User(db.Model):
     nickname = db.Column(db.String(32))
     role = db.Column(db.SmallInteger, default=ROLE_USER)
     issues = db.relationship('Entry', backref='creator', lazy='dynamic')
-    total_problems = db.Column(db.Integer, default=0)
+    active_issues = db.Column(db.Integer, default=0)
     api_id = db.Column(db.String(32))
 
     def hash_password(self, password):
@@ -97,6 +97,10 @@ class User(db.Model):
 
 # utils and such
 
+def getUserAvatar(email):
+  return 'http://www.gravatar.com/avatar/' + hashlib.md5(email).hexdigest() + '?d=mm&s=100'
+
+
 @app.before_request
 def before_request():
     g.user = current_user
@@ -104,10 +108,12 @@ def before_request():
     if not g.user.is_authenticated():
         g.user.api_id = "N/A"
         g.user.issues = "N/A"
-        g.user.avatar = ""
+        g.user.avatar = getUserAvatar("anonymous@drone.codecove.net")
         g.user.nickname = "Anonymous"
         g.user.username = "Anonymous"
         g.user.email = "anonymous@drone.codecove.net"
+    else:
+        g.user.avatar = getUserAvatar(g.user.email)
     g.app_name = "Avalanche Alpha"
 
 
@@ -169,8 +175,7 @@ def add_entry():
         db.session.add(entry)
 
         # Update user problem count
-        currentProblems = g.user.total_problems
-        g.user.total_problems = currentProblems + 1
+        g.user.active_issues += 1
         db.session.add(g.user)
         db.session.commit()
         flash('Bedankt voor het posten van uw probleem!')
@@ -414,8 +419,7 @@ def post_entry_api():
         entry = Entry(title=title, body=text, lang=lang,
                       timestamp=datetime.utcnow(), creator=creator, fileloc=fileupload, isactive=1)
         # update creator problem count
-        creator.total_problems = creator.total_problems + 1
-        db.session.add(creator)
+        creator.active_issues += 1
         db.session.add(entry)
         db.session.commit()
 
@@ -481,6 +485,7 @@ def inactive_entry_api(issue_id):
     if creator is not None:
         if issue.user_id is creator.id:
             issue.isactive = 0
+            creator.active_issues -= 1
             db.session.commit()
 
             response = jsonify({'success': 'true', 'issue_id': issue.id})
@@ -511,6 +516,7 @@ def activate_entry_api(issue_id):
     if creator is not None:
         if issue.user_id is creator.id:
             issue.isactive = 1
+            creator.active_issues += 1
             db.session.commit()
 
             response = jsonify({'success': 'true', 'issue_id': issue.id})
@@ -535,14 +541,12 @@ def delete_entry_api(issue_id):
     if creator is not None:
         if issue.user_id is creator.id:
             db.session.delete(issue)
-            db.session.commit()  # We need to kill the corresponding source files too if they exist
+            creator.active_issues -= 1
+            db.session.commit()
+            # We need to kill the corresponding source files too if they exist
             sourcefile = os.path.dirname(os.path.realpath(sys.argv[0])) + issue.fileloc
             if os.path.isfile(sourcefile):
                 os.remove(sourcefile)
-            else:
-                response = jsonify({'success': 'false', 'fileloc_del': sourcefile})
-                response.status_code = 500
-                return response
             response = jsonify({'success': 'true', 'issue_id': issue.id})
             response.status_code = 200
             return response

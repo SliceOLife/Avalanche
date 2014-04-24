@@ -38,7 +38,7 @@ nosetests.xml
 avalanche/.DS_Store
 avalanche/.Python
 avalanche/include/python2.7
-db.sqlite
+app.db
 env/.DS_Store
 env/.Python
 env/include/python2.7

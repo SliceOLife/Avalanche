@@ -21,7 +21,7 @@ from passlib.apps import custom_app_context as pwd_context
 
 # init config
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.urandom(24)
+app.config['SECRET_KEY'] = urandom(24)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
 app.config['UPLOAD_FOLDER'] = 'uploads/source/'
@@ -226,13 +226,6 @@ def register_new():
     return render_template('reg_new.html')
 
 
-@app.route('/experimental/entries')
-@login_required
-def show_entries_exp():
-    entries = Entry.query.all()
-    return render_template('show_entries_exp.html', entries=entries)
-
-
 @app.route('/post')
 @login_required
 def post_entry():
@@ -240,11 +233,10 @@ def post_entry():
 
 
 @app.route('/projector')
-@login_required
 def show_entries_projector():
-    #entries = Entry.query.all()
-    #return render_template('show_entries_projector.html', entries=entries)
-    abort(404)
+    entries = Entry.query.all()
+    count = Entry.query.count()
+    return render_template('projector_view.html', entries=entries, problemTotal=count)
 
 
 @app.route('/test')

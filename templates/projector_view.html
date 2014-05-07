@@ -1,0 +1,24 @@
+<table width=100% border=1 bordercolor=#dcdcdc fontsize=12 cellpadding=4>
+	<tr>
+		<td bgcolor=#ededed align=center><b>#</b></td>
+		<td bgcolor=#ededed><b>Probleem</b></td>
+		<td bgcolor=#ededed><b>Gebruiker</b></td>
+		<td bgcolor=#ededed><b>Taal</b></td>
+		<td bgcolor=#ededed><b>Datum</b></td>
+	</tr>
+	{% for entry in entries %}
+		<tr>
+			<td bgcolor=#fafafa>{{ entry.id }}</td>
+			<td bgcolor=#fafafa>{{ entry.title }}</td>
+			<td bgcolor=#fafafa>{{ entry.user_id }}</td>
+			<td bgcolor=#fafafa>{{ entry.lang }}</td>
+			<td bgcolor=#fafafa>{{ entry.timestamp }}</td>
+	 </tr>
+	{% else %}
+		<td><em>Ongelofelijk, geen problemen?</td>
+	{% endfor %}
+	<tr>
+		<td bgcolor=#ededed><b>Probleem Totaal</b></td>
+		<td bgcolor=#ededed>{{ problemTotal }}</td>
+	</tr>
+</table>
